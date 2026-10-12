@@ -36,3 +36,7 @@ def upload_file_obj(file: UploadFile, file_id: UUID):
     s3.upload_fileobj(
         file.file, BUCKET, object_name, ExtraArgs={"ContentType": file.content_type}
     )
+
+
+def delete_file_obj(key: str):
+    s3.delete_object(Bucket=BUCKET, Key=key)

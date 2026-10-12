@@ -389,3 +389,85 @@ def test_app_upload_file_redirects_when_unauthenticated(mocker, client, db_conn)
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/login"
     assert db_conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+
+
+# --------------------------------------------------------------------------- #
+# POST /app/delete/{file_path:path}
+# --------------------------------------------------------------------------- #
+
+
+def test_app_delete_file_removes_row_and_object(mocker, auth_client, db_conn):
+    file_id = _insert_file(db_conn, "hello.txt", object_storage_name="hello.txt-x")
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        "/app/delete/",
+        data={"file_id": file_id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/app/"
+
+    delete.assert_called_once_with(key="hello.txt-x")
+    assert (
+        db_conn.execute(
+            "SELECT COUNT(*) FROM files WHERE id = ?", (file_id,)
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_app_delete_file_redirects_to_current_folder(mocker, auth_client, db_conn):
+    folder_id = _insert_file(db_conn, "docs", is_file=False)
+    file_id = _insert_file(
+        db_conn,
+        "notes.txt",
+        object_storage_name="notes.txt-x",
+        parent_id=folder_id,
+    )
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        f"/app/delete/{folder_id}",
+        data={"file_id": file_id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == f"/app/{folder_id}"
+    delete.assert_called_once_with(key="notes.txt-x")
+
+
+def test_app_delete_file_redirects_when_unauthenticated(mocker, client, db_conn):
+    file_id = _insert_file(db_conn, "hello.txt", object_storage_name="hello.txt-x")
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = client.post(
+        "/app/delete/",
+        data={"file_id": file_id},
+        follow_redirects=False,
+    )
+
+    delete.assert_not_called()
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/login"
+    assert (
+        db_conn.execute(
+            "SELECT COUNT(*) FROM files WHERE id = ?", (file_id,)
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_app_delete_file_missing_in_db(mocker, auth_client, db_conn):
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        "/app/delete/",
+        data={"file_id": str(uuid.uuid4())},
+        follow_redirects=False,
+    )
+
+    delete.assert_not_called()
+    assert response.status_code == status.HTTP_404_NOT_FOUND

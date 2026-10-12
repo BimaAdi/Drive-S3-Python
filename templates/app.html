@@ -20,7 +20,15 @@
       {% endif %}
       {% for item in tree %}
         {% if item.type == "file" %}
-          <li><a href="/app/download/{{ item.id }}">{{ item.name }}</a></li>
+          <li>
+            <div style="display: flex; gap: 10px;list-style-type: disc;">
+              <a href="/app/download/{{ item.id }}">{{ item.name }}</a>
+              <form method="POST" action="/app/delete/{{ file_path }}">
+                <input type="hidden" name="file_id" value="{{ item.id }}">
+                <button type="submit">Delete</button>
+              </form>
+            </div>
+          </li>
         {% else %}
           <li><a href="/app/{{ item.id }}">{{ item.name }}/</a></li>
         {% endif %}

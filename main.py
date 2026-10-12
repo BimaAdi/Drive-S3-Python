@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from auth import AUTH_COOKIE, AUTH_KEY
 from db import DB_URL, get_db, init_db
-from s3 import download_file_obj, init_bucket, upload_file_obj
+from s3 import delete_file_obj, download_file_obj, init_bucket, upload_file_obj
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -186,3 +186,25 @@ async def app_upload_file(
     )
     upload_file_obj(file=file, file_id=file_id)
     return RedirectResponse(url="/app", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/app/delete/{file_path:path}")
+async def app_delete_file(
+    file_path: str,
+    file_id: Annotated[str, Form()],
+    db: Annotated[Cursor, Depends(get_db)],
+    s3drive: Annotated[str | None, Cookie()] = None,
+):
+    if s3drive != AUTH_COOKIE:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    db.execute("SELECT id, object_storage_name FROM files WHERE id = ?", (file_id,))
+    row = db.fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Files path not found"
+        )
+    db.execute("DELETE FROM files WHERE id = ?", (file_id,))
+    delete_file_obj(key=row[1])
+    return RedirectResponse(
+        url=f"/app/{file_path}", status_code=status.HTTP_303_SEE_OTHER
+    )
