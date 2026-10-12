@@ -8,6 +8,7 @@ from fastapi import (
     Cookie,
     Depends,
     FastAPI,
+    Form,
     HTTPException,
     Request,
     Response,
@@ -66,15 +67,26 @@ async def logout(response: Response):
     return response
 
 
-@app.get("/app", response_class=HTMLResponse)
+@app.get("/app/{file_path:path}", response_class=HTMLResponse)
 async def app_page(
     request: Request,
+    file_path: str,
     db: Annotated[Cursor, Depends(get_db)],
     s3drive: Annotated[str | None, Cookie()] = None,
 ):
     if s3drive != AUTH_COOKIE:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    db.execute("SELECT id, name, is_file FROM files ORDER BY name ASC")
+
+    if file_path == "":
+        db.execute(
+            "SELECT id, name, is_file FROM files WHERE parent_id IS NULL ORDER BY name ASC"
+        )
+    else:
+        split_file_path = file_path.split("/")
+        last_path = split_file_path[-1]
+        db.execute(
+            "SELECT id, name, is_file FROM files WHERE parent_id = ?", (last_path,)
+        )
     data = []
     for row in db.fetchall():
         data.append(
@@ -87,7 +99,27 @@ async def app_page(
         context={
             "request": request,
             "tree": data,
+            "file_path": file_path,
         },
+    )
+
+
+@app.post("/app/create-folder/{file_path:path}")
+async def app_create_folder(
+    file_path: str,
+    foldername: Annotated[str, Form()],
+    db: Annotated[Cursor, Depends(get_db)],
+    s3drive: Annotated[str | None, Cookie()] = None,
+):
+    split_path = file_path.split("/")
+    parent_id = split_path[-1] if len(split_path) > 0 else None
+    folder_id = uuid.uuid4()
+    db.execute(
+        "INSERT INTO files (id, name, parent_id, is_file) VALUES (?, ?, ?, ?)",
+        (str(folder_id), foldername, parent_id, False),
+    )
+    return RedirectResponse(
+        url=f"/app/{file_path}", status_code=status.HTTP_303_SEE_OTHER
     )
 
 
@@ -121,9 +153,7 @@ async def app_download_file(
         return StreamingResponse(
             content=response_file["Body"].iter_chunks(),
             media_type=response_file.get("ContentType", "application/octet-stream"),
-            headers={
-                "Content-Disposition": f'attachment; filename="{row[2]}"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{row[2]}"'},
         )
     except ClientError:
         raise HTTPException(

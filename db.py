@@ -8,7 +8,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS files (
             id UUID PRIMARY KEY,
             name TEXT NOT NULL,
-            object_storage_name TEXT NOT NULL,
+            object_storage_name TEXT NULL,
             parent_id UUID REFERENCES files(id),
             is_file BOOLEAN NOT NULL CHECK (is_file IN (0, 1))
         )
