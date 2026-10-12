@@ -3,8 +3,18 @@ from sqlite3 import Cursor
 from typing import Annotated
 
 import boto3
-from fastapi import Cookie, Depends, FastAPI, Request, Response, UploadFile, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from botocore.exceptions import ClientError
+from fastapi import (
+    Cookie,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from auth import AUTH_COOKIE, AUTH_KEY, BUCKET, S3_ACCESS, S3_SECRET
@@ -70,7 +80,7 @@ async def app_page(
         data.append(
             {"id": row[0], "name": row[1], "type": "file" if row[2] else "folder"}
         )
-    
+
     return templates.TemplateResponse(
         request=request,
         name="app.html",
@@ -79,6 +89,46 @@ async def app_page(
             "tree": data,
         },
     )
+
+
+@app.get("/app/download/{file_id}")
+async def app_download_file(
+    file_id: str,
+    db: Annotated[Cursor, Depends(get_db)],
+    s3drive: Annotated[str | None, Cookie()] = None,
+):
+    if s3drive != AUTH_COOKIE:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    # check file on database
+    db.execute(
+        """
+        SELECT id, object_storage_name, name
+        FROM files
+        WHERE id = ?
+        """,
+        (file_id,),
+    )
+    row = db.fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Files path not found"
+        )
+
+    # get file on s3
+    try:
+        response_file = s3.get_object(Bucket=BUCKET, Key=row[1])
+        return StreamingResponse(
+            content=response_file["Body"].iter_chunks(),
+            media_type=response_file.get("ContentType", "application/octet-stream"),
+            headers={
+                "Content-Disposition": f'attachment; filename="{row[2]}"'
+            },
+        )
+    except ClientError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Files object not found"
+        )
 
 
 @app.post("/app/upload/")
