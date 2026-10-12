@@ -65,6 +65,7 @@ async def app_page(
     if s3drive != AUTH_COOKIE:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
+    # get file_path on db
     if file_path == "":
         db.execute(
             "SELECT id, name, is_file FROM files WHERE parent_id IS NULL ORDER BY name ASC"
@@ -75,12 +76,23 @@ async def app_page(
         db.execute(
             "SELECT id, name, is_file FROM files WHERE parent_id = ?", (last_path,)
         )
+
     data = []
     for row in db.fetchall():
-        print(row[1])
         data.append(
             {"id": row[0], "name": row[1], "type": "file" if row[2] else "folder"}
         )
+
+    # get parent file_path
+    parent_file_path = None
+    if file_path != "":
+        db.execute("SELECT parent_id FROM files WHERE id = ?", (file_path,))
+        row = db.fetchone()
+        if row is not None:
+            # None it's root path,
+            # "" it's parent it's root path,
+            # "aaaa-bbb-ccc" it's parent is "aaaa-bbb-ccc"
+            parent_file_path = row[0] if row[0] is not None else ""
 
     return templates.TemplateResponse(
         request=request,
@@ -89,6 +101,7 @@ async def app_page(
             "request": request,
             "tree": data,
             "file_path": file_path,
+            "parent_file_path": parent_file_path,
         },
     )
 

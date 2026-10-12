@@ -201,6 +201,34 @@ def test_app_page_empty_folder(auth_client, db_conn):
     assert "folder is empty" in response.text
 
 
+def test_app_page_hides_parent_link_at_root(auth_client, db_conn):
+    response = auth_client.get("/app/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "../" not in response.text
+
+
+def test_app_page_parent_link_points_to_root_for_top_level_folder(auth_client, db_conn):
+    folder_id = _insert_file(db_conn, "docs", is_file=False)
+
+    response = auth_client.get(f"/app/{folder_id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "../" in response.text
+    assert 'href="/app/"' in response.text
+
+
+def test_app_page_parent_link_points_to_parent_folder(auth_client, db_conn):
+    parent_id = _insert_file(db_conn, "docs", is_file=False)
+    child_id = _insert_file(db_conn, "nested", parent_id=parent_id, is_file=False)
+
+    response = auth_client.get(f"/app/{child_id}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "../" in response.text
+    assert f'href="/app/{parent_id}"' in response.text
+
+
 # --------------------------------------------------------------------------- #
 # POST /app/create-folder/{file_path:path}
 # --------------------------------------------------------------------------- #

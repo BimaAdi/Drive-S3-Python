@@ -14,8 +14,10 @@
         <input type="file" name="file">
         <button type="submit">Upload File</button>
     </form>
-    <p>{{ file_path }}</p>
     <ul>
+      {% if parent_file_path is not none %}
+        <li><a href="/app/{{ parent_file_path }}">../</a></li>
+      {% endif %}
       {% for item in tree %}
         {% if item.type == "file" %}
           <li><a href="/app/download/{{ item.id }}">{{ item.name }}</a></li>
@@ -23,7 +25,7 @@
           <li><a href="/app/{{ item.id }}">{{ item.name }}/</a></li>
         {% endif %}
       {% else %}
-        <li>folder is empty</li>
+        <li>folder is empty</>
       {% endfor %}
     </ul>
 </body>
