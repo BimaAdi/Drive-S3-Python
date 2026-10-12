@@ -1,2 +1,5 @@
 AUTH_KEY = "s3drive"
 AUTH_COOKIE = "authcookie"
+S3_SECRET = "secret"
+S3_ACCESS = "access"
+BUCKET = "drive"

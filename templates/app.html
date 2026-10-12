@@ -6,5 +6,16 @@
     <form method="POST" action="/logout">
         <button type="submit">Logout</button>
     </form>
+    <form method="POST" action="/app/upload/" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <button type="submit">Upload File</button>
+    </form>
+    <ul>
+      {% for item in tree %}
+        <li><a href="/app/{{ item.id }}">{{ item.name }}</a></li>
+      {% else %}
+        <li>folder is empty</li>
+      {% endfor %}
+    </ul>
 </body>
 </html>

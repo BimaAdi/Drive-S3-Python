@@ -1,0 +1,13 @@
+services:
+  rustfs:
+    image: "rustfs/rustfs:1.0.1"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_CONSOLE_ADDRESS=:9001
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_OBS_LOGGER_LEVEL=error
+      - RUSTFS_ACCESS_KEY=access
+      - RUSTFS_SECRET_KEY=secret 
