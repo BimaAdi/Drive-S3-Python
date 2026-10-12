@@ -2,8 +2,6 @@ import uuid
 from sqlite3 import Cursor
 from typing import Annotated
 
-import boto3
-from botocore.exceptions import ClientError
 from fastapi import (
     Cookie,
     Depends,
@@ -18,27 +16,17 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from auth import AUTH_COOKIE, AUTH_KEY, BUCKET, S3_ACCESS, S3_SECRET
-from db import get_db, init_db
+from auth import AUTH_COOKIE, AUTH_KEY
+from db import DB_URL, get_db, init_db
+from s3 import download_file_obj, init_bucket, upload_file_obj
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 print("init S3")
-s3 = boto3.client(
-    "s3",
-    endpoint_url="http://localhost:9000",
-    aws_access_key_id=S3_ACCESS,
-    aws_secret_access_key=S3_SECRET,
-)
-try:
-    s3.create_bucket(Bucket=BUCKET)
-    print(f"bucket {BUCKET} succesfully created")
-except s3.exceptions.BucketAlreadyOwnedByYou:
-    print(f"bucket {BUCKET} already created")
-
+init_bucket()
 print("init db")
-init_db()
+init_db(DB_URL)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -89,6 +77,7 @@ async def app_page(
         )
     data = []
     for row in db.fetchall():
+        print(row[1])
         data.append(
             {"id": row[0], "name": row[1], "type": "file" if row[2] else "folder"}
         )
@@ -113,6 +102,8 @@ async def app_create_folder(
 ):
     split_path = file_path.split("/")
     parent_id = split_path[-1] if len(split_path) > 0 else None
+    if parent_id is not None:
+        parent_id = parent_id if parent_id.strip() != "" else None
     folder_id = uuid.uuid4()
     db.execute(
         "INSERT INTO files (id, name, parent_id, is_file) VALUES (?, ?, ?, ?)",
@@ -148,17 +139,17 @@ async def app_download_file(
         )
 
     # get file on s3
-    try:
-        response_file = s3.get_object(Bucket=BUCKET, Key=row[1])
-        return StreamingResponse(
-            content=response_file["Body"].iter_chunks(),
-            media_type=response_file.get("ContentType", "application/octet-stream"),
-            headers={"Content-Disposition": f'attachment; filename="{row[2]}"'},
-        )
-    except ClientError:
+    response_file = download_file_obj(key=row[1])
+    if response_file is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Files object not found"
         )
+
+    return StreamingResponse(
+        content=response_file["Body"].iter_chunks(),
+        media_type=response_file.get("ContentType", "application/octet-stream"),
+        headers={"Content-Disposition": f'attachment; filename="{row[2]}"'},
+    )
 
 
 @app.post("/app/upload/")
@@ -180,7 +171,5 @@ async def app_upload_file(
         """,
         (str(file_id), file.filename, object_name, None, True),
     )
-    s3.upload_fileobj(
-        file.file, BUCKET, object_name, ExtraArgs={"ContentType": file.content_type}
-    )
+    upload_file_obj(file=file, file_id=file_id)
     return RedirectResponse(url="/app", status_code=status.HTTP_303_SEE_OTHER)
