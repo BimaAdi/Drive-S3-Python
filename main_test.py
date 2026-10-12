@@ -7,6 +7,7 @@ per-test in-memory database through FastAPI dependency overrides.
 ``s3.init_bucket()`` call before the import runs.  Every test gets its own
 database, so the suite is safe to run in parallel (``pytest -n auto``).
 """
+
 import asyncio
 import sqlite3
 import uuid
