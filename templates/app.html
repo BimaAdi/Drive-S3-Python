@@ -10,7 +10,7 @@
         <input type="text" name="foldername">
         <button type="submit">Create Folder</button>
     </form>
-    <form method="POST" action="/app/upload/" enctype="multipart/form-data">
+    <form method="POST" action="/app/upload/{{ file_path }}" enctype="multipart/form-data">
         <input type="file" name="file">
         <button type="submit">Upload File</button>
     </form>

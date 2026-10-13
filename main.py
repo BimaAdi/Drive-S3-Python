@@ -55,57 +55,6 @@ async def logout(response: Response):
     return response
 
 
-@app.get("/app/{file_path:path}", response_class=HTMLResponse)
-async def app_page(
-    request: Request,
-    file_path: str,
-    db: Annotated[Cursor, Depends(get_db)],
-    s3drive: Annotated[str | None, Cookie()] = None,
-):
-    if s3drive != AUTH_COOKIE:
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-
-    # get file_path on db
-    if file_path == "":
-        db.execute(
-            "SELECT id, name, is_file FROM files WHERE parent_id IS NULL ORDER BY name ASC"
-        )
-    else:
-        split_file_path = file_path.split("/")
-        last_path = split_file_path[-1]
-        db.execute(
-            "SELECT id, name, is_file FROM files WHERE parent_id = ?", (last_path,)
-        )
-
-    data = []
-    for row in db.fetchall():
-        data.append(
-            {"id": row[0], "name": row[1], "type": "file" if row[2] else "folder"}
-        )
-
-    # get parent file_path
-    parent_file_path = None
-    if file_path != "":
-        db.execute("SELECT parent_id FROM files WHERE id = ?", (file_path,))
-        row = db.fetchone()
-        if row is not None:
-            # None it's root path,
-            # "" it's parent it's root path,
-            # "aaaa-bbb-ccc" it's parent is "aaaa-bbb-ccc"
-            parent_file_path = row[0] if row[0] is not None else ""
-
-    return templates.TemplateResponse(
-        request=request,
-        name="app.html",
-        context={
-            "request": request,
-            "tree": data,
-            "file_path": file_path,
-            "parent_file_path": parent_file_path,
-        },
-    )
-
-
 @app.post("/app/create-folder/{file_path:path}")
 async def app_create_folder(
     file_path: str,
@@ -165,9 +114,10 @@ async def app_download_file(
     )
 
 
-@app.post("/app/upload/")
+@app.post("/app/upload/{file_path:path}")
 async def app_upload_file(
     request: Request,
+    file_path: str,
     db: Annotated[Cursor, Depends(get_db)],
     file: UploadFile,
     s3drive: Annotated[str | None, Cookie()] = None,
@@ -177,15 +127,18 @@ async def app_upload_file(
 
     file_id = uuid.uuid4()
     object_name = f"{file.filename}-{file_id}"
+    parent_id = file_path if file_path != "" else None
     db.execute(
         """
         INSERT INTO files (id, name, object_storage_name, parent_id, is_file)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (str(file_id), file.filename, object_name, None, True),
+        (str(file_id), file.filename, object_name, parent_id, True),
     )
     upload_file_obj(file=file, file_id=file_id)
-    return RedirectResponse(url="/app", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        url=f"/app/{file_path}", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @app.post("/app/delete-file/{file_path:path}")
@@ -248,4 +201,55 @@ async def app_delete_folder(
     delete_child(db=db, folder_id=folder_id)
     return RedirectResponse(
         url=f"/app/{file_path}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@app.get("/app/{file_path:path}", response_class=HTMLResponse)
+async def app_page(
+    request: Request,
+    file_path: str,
+    db: Annotated[Cursor, Depends(get_db)],
+    s3drive: Annotated[str | None, Cookie()] = None,
+):
+    if s3drive != AUTH_COOKIE:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    # get file_path on db
+    if file_path == "":
+        db.execute(
+            "SELECT id, name, is_file FROM files WHERE parent_id IS NULL ORDER BY name ASC"
+        )
+    else:
+        split_file_path = file_path.split("/")
+        last_path = split_file_path[-1]
+        db.execute(
+            "SELECT id, name, is_file FROM files WHERE parent_id = ?", (last_path,)
+        )
+
+    data = []
+    for row in db.fetchall():
+        data.append(
+            {"id": row[0], "name": row[1], "type": "file" if row[2] else "folder"}
+        )
+
+    # get parent file_path
+    parent_file_path = None
+    if file_path != "":
+        db.execute("SELECT parent_id FROM files WHERE id = ?", (file_path,))
+        row = db.fetchone()
+        if row is not None:
+            # None it's root path,
+            # "" it's parent it's root path,
+            # "aaaa-bbb-ccc" it's parent is "aaaa-bbb-ccc"
+            parent_file_path = row[0] if row[0] is not None else ""
+
+    return templates.TemplateResponse(
+        request=request,
+        name="app.html",
+        context={
+            "request": request,
+            "tree": data,
+            "file_path": file_path,
+            "parent_file_path": parent_file_path,
+        },
     )

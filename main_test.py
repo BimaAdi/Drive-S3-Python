@@ -346,7 +346,7 @@ def test_app_download_file_missing_in_s3(mocker, app_module, db_conn):
 
 
 # --------------------------------------------------------------------------- #
-# POST /app/upload/
+# POST /app/upload/{file_path:path}
 # --------------------------------------------------------------------------- #
 
 
@@ -360,7 +360,7 @@ def test_app_upload_file_stores_object_and_row(mocker, auth_client, db_conn):
     )
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/app"
+    assert response.headers["location"] == "/app/"
 
     row = db_conn.execute(
         "SELECT name, object_storage_name, is_file FROM files WHERE name = ?",
@@ -389,6 +389,36 @@ def test_app_upload_file_redirects_when_unauthenticated(mocker, client, db_conn)
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"] == "/login"
     assert db_conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+
+
+def test_app_upload_file_into_folder_stores_object_and_row(
+    mocker, auth_client, db_conn
+):
+    folder_id = _insert_file(db_conn, "docs", is_file=False)
+    upload = mocker.patch("main.upload_file_obj")
+
+    response = auth_client.post(
+        f"/app/upload/{folder_id}",
+        files={"file": ("nested.txt", b"nested content", "text/plain")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == f"/app/{folder_id}"
+
+    row = db_conn.execute(
+        "SELECT name, object_storage_name, parent_id, is_file FROM files WHERE name = ?",
+        ("nested.txt",),
+    ).fetchone()
+    assert row is not None
+    assert row[2] == folder_id
+    assert row[3] == 1
+
+    upload.assert_called_once()
+    uploaded_file = upload.call_args.kwargs["file"]
+    uploaded_id = upload.call_args.kwargs["file_id"]
+    assert uploaded_file.filename == "nested.txt"
+    assert row[1] == f"nested.txt-{uploaded_id}"
 
 
 # --------------------------------------------------------------------------- #
