@@ -188,7 +188,7 @@ async def app_upload_file(
     return RedirectResponse(url="/app", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@app.post("/app/delete/{file_path:path}")
+@app.post("/app/delete-file/{file_path:path}")
 async def app_delete_file(
     file_path: str,
     file_id: Annotated[str, Form()],
@@ -197,7 +197,10 @@ async def app_delete_file(
 ):
     if s3drive != AUTH_COOKIE:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    db.execute("SELECT id, object_storage_name FROM files WHERE id = ?", (file_id,))
+    db.execute(
+        "SELECT id, object_storage_name FROM files WHERE id = ? AND is_file = 1",
+        (file_id,),
+    )
     row = db.fetchone()
     if row is None:
         raise HTTPException(
@@ -205,6 +208,44 @@ async def app_delete_file(
         )
     db.execute("DELETE FROM files WHERE id = ?", (file_id,))
     delete_file_obj(key=row[1])
+    return RedirectResponse(
+        url=f"/app/{file_path}", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@app.post("/app/delete-folder/{file_path:path}")
+async def app_delete_folder(
+    file_path: str,
+    folder_id: Annotated[str, Form()],
+    db: Annotated[Cursor, Depends(get_db)],
+    s3drive: Annotated[str | None, Cookie()] = None,
+):
+    if s3drive != AUTH_COOKIE:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    db.execute("SELECT id FROM files WHERE id = ? AND is_file = 0", (folder_id,))
+    row = db.fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Folder path not found"
+        )
+
+    def delete_child(db: Cursor, folder_id: str):
+        db.execute(
+            """SELECT id, object_storage_name, is_file 
+                   FROM files WHERE parent_id = ?""",
+            (folder_id,),
+        )
+        rows = db.fetchall()
+        for row in rows:
+            if row[2] == 1:
+                delete_file_obj(key=row[1])
+            else:
+                delete_child(db=db, folder_id=row[0])
+            db.execute("DELETE FROM files WHERE id = ?", (row[0],))
+        db.execute("DELETE FROM files WHERE id = ?", (folder_id,))
+
+    delete_child(db=db, folder_id=folder_id)
     return RedirectResponse(
         url=f"/app/{file_path}", status_code=status.HTTP_303_SEE_OTHER
     )

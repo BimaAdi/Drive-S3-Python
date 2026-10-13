@@ -392,7 +392,7 @@ def test_app_upload_file_redirects_when_unauthenticated(mocker, client, db_conn)
 
 
 # --------------------------------------------------------------------------- #
-# POST /app/delete/{file_path:path}
+# POST /app/delete-file/{file_path:path}
 # --------------------------------------------------------------------------- #
 
 
@@ -401,7 +401,7 @@ def test_app_delete_file_removes_row_and_object(mocker, auth_client, db_conn):
     delete = mocker.patch("main.delete_file_obj")
 
     response = auth_client.post(
-        "/app/delete/",
+        "/app/delete-file/",
         data={"file_id": file_id},
         follow_redirects=False,
     )
@@ -429,7 +429,7 @@ def test_app_delete_file_redirects_to_current_folder(mocker, auth_client, db_con
     delete = mocker.patch("main.delete_file_obj")
 
     response = auth_client.post(
-        f"/app/delete/{folder_id}",
+        f"/app/delete-file/{folder_id}",
         data={"file_id": file_id},
         follow_redirects=False,
     )
@@ -444,7 +444,7 @@ def test_app_delete_file_redirects_when_unauthenticated(mocker, client, db_conn)
     delete = mocker.patch("main.delete_file_obj")
 
     response = client.post(
-        "/app/delete/",
+        "/app/delete-file/",
         data={"file_id": file_id},
         follow_redirects=False,
     )
@@ -464,8 +464,129 @@ def test_app_delete_file_missing_in_db(mocker, auth_client, db_conn):
     delete = mocker.patch("main.delete_file_obj")
 
     response = auth_client.post(
-        "/app/delete/",
+        "/app/delete-file/",
         data={"file_id": str(uuid.uuid4())},
+        follow_redirects=False,
+    )
+
+    delete.assert_not_called()
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# --------------------------------------------------------------------------- #
+# POST /app/delete-folder/{file_path:path}
+# --------------------------------------------------------------------------- #
+
+
+def test_app_delete_folder_removes_folder(mocker, auth_client, db_conn):
+    folder_id = _insert_file(db_conn, "docs", is_file=False)
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        "/app/delete-folder/",
+        data={"folder_id": folder_id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == "/app/"
+
+    delete.assert_not_called()  # nothing to remove from S3
+    assert (
+        db_conn.execute(
+            "SELECT COUNT(*) FROM files WHERE id = ?", (folder_id,)
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_app_delete_folder_removes_nested_subfolders(mocker, auth_client, db_conn):
+    parent_id = _insert_file(db_conn, "docs", is_file=False)
+    child_id = _insert_file(db_conn, "nested", parent_id=parent_id, is_file=False)
+    _second_child_id = _insert_file(
+        db_conn, "nested-2", parent_id=parent_id, is_file=False
+    )
+    _grandchild_id = _insert_file(db_conn, "deep", parent_id=child_id, is_file=False)
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        f"/app/delete-folder/{parent_id}",
+        data={"folder_id": parent_id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == f"/app/{parent_id}"
+
+    delete.assert_not_called()  # nothing to remove from S3
+    assert db_conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+
+
+def test_app_delete_folder_deletes_files_inside(mocker, auth_client, db_conn):
+    folder_id = _insert_file(db_conn, "docs", is_file=False)
+    _insert_file(
+        db_conn,
+        "notes.txt",
+        object_storage_name="notes.txt-x",
+        parent_id=folder_id,
+    )
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        f"/app/delete-folder/{folder_id}",
+        data={"folder_id": folder_id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == f"/app/{folder_id}"
+
+    delete.assert_called_once_with(key="notes.txt-x")
+    assert db_conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+
+
+def test_app_delete_folder_deletes_files_in_nested_subfolders(
+    mocker, auth_client, db_conn
+):
+    parent_id = _insert_file(db_conn, "docs", is_file=False)
+    child_id = _insert_file(db_conn, "nested", parent_id=parent_id, is_file=False)
+    _insert_file(
+        db_conn,
+        "top.txt",
+        object_storage_name="top.txt-x",
+        parent_id=parent_id,
+    )
+    _insert_file(
+        db_conn,
+        "deep.txt",
+        object_storage_name="deep.txt-x",
+        parent_id=child_id,
+    )
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        f"/app/delete-folder/{parent_id}",
+        data={"folder_id": parent_id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == f"/app/{parent_id}"
+
+    assert delete.call_count == 2
+    assert {call.kwargs["key"] for call in delete.call_args_list} == {
+        "top.txt-x",
+        "deep.txt-x",
+    }
+    assert db_conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+
+
+def test_app_delete_folder_missing_in_db(mocker, auth_client, db_conn):
+    delete = mocker.patch("main.delete_file_obj")
+
+    response = auth_client.post(
+        "/app/delete-folder/",
+        data={"folder_id": str(uuid.uuid4())},
         follow_redirects=False,
     )
 
