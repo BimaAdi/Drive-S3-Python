@@ -9,7 +9,8 @@ from auth import BUCKET, S3_ACCESS, S3_SECRET
 
 s3 = boto3.client(
     "s3",
-    endpoint_url="http://localhost:9000",
+    endpoint_url="http://localhost:9000", # rustfs
+    # endpoint_url="http://localhost:8333", # seaweedfs
     aws_access_key_id=S3_ACCESS,
     aws_secret_access_key=S3_SECRET,
 )

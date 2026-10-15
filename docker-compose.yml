@@ -10,4 +10,13 @@ services:
       - RUSTFS_CONSOLE_ENABLE=true
       - RUSTFS_OBS_LOGGER_LEVEL=error
       - RUSTFS_ACCESS_KEY=access
-      - RUSTFS_SECRET_KEY=secret 
+      - RUSTFS_SECRET_KEY=secret
+  seaweedfs:
+    image: "chrislusf/seaweedfs"
+    ports:
+      - "8333:8333"
+    environment:
+      - AWS_ACCESS_KEY_ID=access
+      - AWS_SECRET_ACCESS_KEY=secret
+      - S3_BUCKET=drive
+
